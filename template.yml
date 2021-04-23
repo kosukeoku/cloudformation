@@ -1,0 +1,276 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: template
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Name Prefix"
+        Parameters:
+          - PJPrefix
+      - Label:
+          default: RDS Configuration
+        Parameters:
+          - DBMasterUserName
+          - DBPassword
+    ParameterLabels:
+      DBMasterUserName:
+        default: "DBUserName"
+      DBPassword:
+        default: "DBPassword"
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------# 
+Parameters:
+  PJPrefix:
+    Type: String
+
+  DBMasterUserName:
+    Type: String
+    Default: "admin"
+    NoEcho: false
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: "must begin with a letter and contain only alphanumeric characters."
+  DBPassword: 
+    Default: "adminadmin"
+    NoEcho: true
+    Type: String
+    MinLength: 8
+    MaxLength: 41
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: "must contain only alphanumeric characters."
+
+Resources: 
+# ------------------------------------------------------------#
+#  VPC
+# ------------------------------------------------------------#
+# VPC Create
+  VPC: 
+    Type: "AWS::EC2::VPC"
+    Properties: 
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      InstanceTenancy: default
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-vpc"
+
+# InternetGateway Create
+  InternetGateway: 
+    Type: "AWS::EC2::InternetGateway"
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-igw"
+
+# IGW Attach
+  InternetGatewayAttachment: 
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties: 
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC 
+
+# ------------------------------------------------------------#
+#  Subnet
+# ------------------------------------------------------------#          
+# Public SubnetA Create
+  PublicSubnetA: 
+    Type: "AWS::EC2::Subnet"
+    Properties: 
+      AvailabilityZone: "ap-northeast-1a"
+      CidrBlock: 10.0.0.0/24
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-public-subnet-a"
+
+# Private SubnetA Create
+  PrivateSubnetA: 
+    Type: "AWS::EC2::Subnet"
+    Properties: 
+      AvailabilityZone: "ap-northeast-1a"
+      CidrBlock: 10.0.1.0/24
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-private-subnet-a"
+
+# Public SubnetC Create
+  PublicSubnetC: 
+    Type: "AWS::EC2::Subnet"
+    Properties: 
+      AvailabilityZone: "ap-northeast-1c"
+      CidrBlock: 10.0.2.0/24
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-public-subnet-c"
+
+# Private SubnetC Create
+  PrivateSubnetC: 
+    Type: "AWS::EC2::Subnet"
+    Properties: 
+      AvailabilityZone: "ap-northeast-1c"
+      CidrBlock: 10.0.3.0/24
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-private-subnet-c"
+
+# ------------------------------------------------------------#
+#  RouteTable
+# ------------------------------------------------------------#          
+# Public RouteTable Create
+  PublicRouteTable: 
+    Type: "AWS::EC2::RouteTable"
+    Properties: 
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-public-route"
+
+
+# ------------------------------------------------------------#
+# Routing
+# ------------------------------------------------------------# 
+# PublicRoute Create
+  PublicRoute: 
+    Type: "AWS::EC2::Route"
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable 
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway 
+
+# ------------------------------------------------------------#
+# RouteTable Associate
+# ------------------------------------------------------------# 
+# PublicRouteTable Associate SubnetA
+  PublicSubnetARouteTableAssociation: 
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties: 
+      SubnetId: !Ref PublicSubnetA 
+      RouteTableId: !Ref PublicRouteTable
+
+# PublicRouteTable Associate SubnetC
+  PublicSubnetCRouteTableAssociation: 
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties: 
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
+
+# ------------------------------------------------------------#
+# SecurityGroup  
+# ------------------------------------------------------------# 
+# SecurityGroup　for ec2
+  SecurityGroupEC2:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties: 
+      GroupDescription: !Sub "${PJPrefix}-sg-for-ec2"
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 14.11.212.129/32 #my ip
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-sg-for-ec2"
+      VpcId: !Ref VPC 
+
+# SecurityGroup for rds
+  SecurityGroupRDS:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties: 
+      GroupDescription: !Sub "${PJPrefix}-sg-for-rds"
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          SourceSecurityGroupId: !Ref SecurityGroupEC2
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-sg-for-rds"
+      VpcId: !Ref VPC 
+
+# ------------------------------------------------------------#
+# EC2 instance 
+# ------------------------------------------------------------# 
+# EC2 instance Create
+
+  EC2: 
+    Type: "AWS::EC2::Instance"
+    Properties: 
+      ImageId: "ami-0992fc94ca0f1415a" #amazon linux
+      KeyName: "raisetech-aws"
+      AvailabilityZone: "ap-northeast-1a"
+      InstanceType: t2.micro
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          SubnetId: !Ref PublicSubnetA
+          GroupSet:
+            - !Ref SecurityGroupEC2
+      UserData: !Base64 |
+        #!/bin/bash
+        sudo yum update -y
+        sudo yum install  -y gcc-c++ glibc-headers openssl-devel readline libyaml-devel readline-devel zlib zlib-devel 
+        sudo yum install -y git
+        git clone https://github.com/sstephenson/rbenv.git ~/.rbenv
+        echo 'export PATH="$HOME/.rbenv/bin:$PATH"' >> ~/.bash_profile
+        echo 'eval "$(rbenv init -)"' >> ~/.bash_profile
+        source .bash_profile
+        mkdir -p "$(rbenv root)"/plugins
+        git clone https://github.com/rbenv/ruby-build.git "$(rbenv root)"/plugins/ruby-build
+        sudo yum localinstall -y https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm
+        sudo yum install -y --enablerepo=mysql80-community mysql-community-server
+        sudo yum install -y --enablerepo=mysql80-community mysql-community-devel
+        curl -sL https://rpm.nodesource.com/setup_12.x | sudo bash -
+        sudo yum install nodejs
+        curl -sL https://dl.yarnpkg.com/rpm/yarn.repo | sudo tee /etc/yum.repos.d/yarn.repo
+        sudo yum install yarn
+      Tags:
+          - Key: Name
+            Value: !Sub "${PJPrefix}-ec2-instance"
+
+# ------------------------------------------------------------#
+# RDS
+# ------------------------------------------------------------# 
+# RDS instance 
+  DBInstance:
+    Type: "AWS::RDS::DBInstance"
+    DeletionPolicy: Snapshot
+    Properties:
+      AvailabilityZone: "ap-northeast-1a"
+      AllocatedStorage: '5'
+      DBInstanceClass: db.t2.micro
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups: 
+        - !Ref SecurityGroupRDS
+      Engine: MySQL
+      EngineVersion: 8.0.20
+      MasterUsername: !Ref DBMasterUserName
+      MasterUserPassword: !Ref DBPassword
+      StorageType: gp2
+
+  DBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: custom subnet group
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetC

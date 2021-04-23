@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: template
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Name Prefix"
+        Parameters:
+          - PJPrefix
+
+# ------------------------------------------------------------#
+# Input Parameters
+# ------------------------------------------------------------# 
+Parameters:
+  PJPrefix:
+    Type: String
+Resources: 
+# ------------------------------------------------------------#
+#  VPC
+# ------------------------------------------------------------#
+# VPC Create
+  VPC: 
+    Type: "AWS::EC2::VPC"
+    Properties: 
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsSupport: "true"
+      EnableDnsHostnames: "true"
+      InstanceTenancy: default
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-vpc"
+
+# InternetGateway Create
+  InternetGateway: 
+    Type: "AWS::EC2::InternetGateway"
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-igw"
+
+# IGW Attach
+  InternetGatewayAttachment: 
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties: 
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC 
+
+# ------------------------------------------------------------#
+#  Subnet
+# ------------------------------------------------------------#          
+# Public SubnetA Create
+  PublicSubnetA: 
+    Type: "AWS::EC2::Subnet"
+    Properties: 
+      AvailabilityZone: "ap-northeast-1a"
+      CidrBlock: 10.0.0.0/24
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-public-subnet-a"
+
+# Private SubnetA Create
+  PrivateSubnetA: 
+    Type: "AWS::EC2::Subnet"
+    Properties: 
+      AvailabilityZone: "ap-northeast-1a"
+      CidrBlock: 10.0.1.0/24
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-private-subnet-a"
+
+# Public SubnetC Create
+  PublicSubnetC: 
+    Type: "AWS::EC2::Subnet"
+    Properties: 
+      AvailabilityZone: "ap-northeast-1c"
+      CidrBlock: 10.0.2.0/24
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-public-subnet-c"
+
+# Private SubnetC Create
+  PrivateSubnetC: 
+    Type: "AWS::EC2::Subnet"
+    Properties: 
+      AvailabilityZone: "ap-northeast-1c"
+      CidrBlock: 10.0.3.0/24
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-private-subnet-c"
+
+# ------------------------------------------------------------#
+#  RouteTable
+# ------------------------------------------------------------#          
+# Public RouteTable Create
+  PublicRouteTable: 
+    Type: "AWS::EC2::RouteTable"
+    Properties: 
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-public-route"
+
+
+# ------------------------------------------------------------#
+# Routing
+# ------------------------------------------------------------# 
+# PublicRoute Create
+  PublicRoute: 
+    Type: "AWS::EC2::Route"
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable 
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway 
+
+# ------------------------------------------------------------#
+# RouteTable Associate
+# ------------------------------------------------------------# 
+# PublicRouteTable Associate SubnetA
+  PublicSubnetARouteTableAssociation: 
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties: 
+      SubnetId: !Ref PublicSubnetA 
+      RouteTableId: !Ref PublicRouteTable
+
+# PublicRouteTable Associate SubnetC
+  PublicSubnetCRouteTableAssociation: 
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties: 
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
+
+# ------------------------------------------------------------#
+# SecurityGroup  
+# ------------------------------------------------------------# 
+# SecurityGroup　for ec2
+  SecurityGroupEC2:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties: 
+      GroupDescription: !Sub "${PJPrefix}-sg-for-ec2"
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 14.11.212.129/32 #my ip
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-sg-for-ec2"
+      VpcId: !Ref VPC 
+# ------------------------------------------------------------#
+# EC2 instance 
+# ------------------------------------------------------------# 
+# EC2 instance Create
+
+  EC2: 
+    Type: "AWS::EC2::Instance"
+    Properties: 
+      ImageId: "ami-0992fc94ca0f1415a" #amazon linux
+      KeyName: "raisetech-aws"
+      AvailabilityZone: "ap-northeast-1a"
+      InstanceType: t2.micro
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          SubnetId: !Ref PublicSubnetA
+          GroupSet:
+            - !Ref SecurityGroupEC2
+      UserData: !Base64 |
+        #!/bin/bash
+        sudo yum update -y
+        sudo amazon-linux-extras install -y ansible2
+        sudo yum install -y java-1.8.0-openjdk-devel
+        sudo wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
+        sudo rpm --import https://pkg.jenkins.io/redhat/jenkins.io.key
+        sudo yum -y install jenkins
+        sudo service jenkins start
+      Tags:
+          - Key: Name
+            Value: !Sub "${PJPrefix}-ec2-instance"
