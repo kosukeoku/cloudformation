@@ -251,6 +251,9 @@ Resources:
       MasterUsername: !Ref DBMasterUserName
       MasterUserPassword: !Ref DBPassword
       StorageType: gp2
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-rds-instance"
 
   DBSubnetGroup:
     Type: "AWS::RDS::DBSubnetGroup"
